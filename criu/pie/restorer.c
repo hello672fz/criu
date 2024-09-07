@@ -845,6 +845,8 @@ static unsigned long restore_mapping(VmaEntry *vma_entry)
 	int flags = vma_entry->flags | MAP_FIXED;
 	unsigned long addr;
 
+	pr_info("1111\n");
+
 	if (vma_entry_is(vma_entry, VMA_AREA_SYSVIPC)) {
 		int att_flags;
 		void *shmaddr = decode_pointer(vma_entry->start);

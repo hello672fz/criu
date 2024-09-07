@@ -1,0 +1,1 @@
+bash restore.sh > log.txt 2>&1
