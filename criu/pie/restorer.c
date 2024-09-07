@@ -900,6 +900,18 @@ static unsigned long restore_mapping(VmaEntry *vma_entry)
 	 * writable since we're going to restore page
 	 * contents.
 	 */
+
+
+
+	// ---
+	// file context: /dev/?, /proc/?
+	// the identifier for vma (start addr, end addr), hotness (1 bit)
+
+	// numa_node_id = ret_numa_node_id_via_hotness(vma_entry->hotness)
+	// logic: find_all numa_node, select a suitable node by (remaining, requesting: vma_entry_len), return id
+
+	// addr = sys_mmap(decode_pointer(vma_entry->start), vma_entry_len(vma_entry), prot, flags, vma_entry->fd,
+	//			vma_entry->pgoff, numa_node_id);
 	addr = sys_mmap(decode_pointer(vma_entry->start), vma_entry_len(vma_entry), prot, flags, vma_entry->fd,
 			vma_entry->pgoff);
 
