@@ -8,8 +8,14 @@
 #include <stdlib.h>
 #include <numa.h>
 #include <unistd.h>
+#include <numaif.h>
 
 int main() {
+	int value = 10;  // 定义一个整型变量
+	void *addr = malloc(4096);  // 让 addr 指向 value 的地址
+	unsigned long nodemask;
+	int ret;
+
 	// Check if NUMA is available
 	if (numa_available() < 0) {
 		perror("NUMA not available");
@@ -24,6 +30,14 @@ int main() {
 
 	void *ptr_arr[1030];
 
+	nodemask = (1UL << 0);
+	ret = mbind(addr, 4096, MPOL_BIND, &nodemask, 1, 0);
+	printf("%d\n", ret);
+//	if (ret != 0) {
+////		perror("mbind");
+//		return 1;
+//	}
+/*
 	for (int i = 0; i < 1024; i++) {
 		// Try to allocate memory on the specified node
 		ptr_arr[i] = numa_alloc_onnode(alloc_size, target_node);
@@ -40,6 +54,6 @@ int main() {
 
 	for (int i = 0; i < 1024; i++) {
 		numa_free(ptr_arr[i], alloc_size);
-	}
+	}*/
 	return 0;
 }
