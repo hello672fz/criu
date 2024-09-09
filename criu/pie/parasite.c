@@ -432,8 +432,7 @@ static int check_rseq(struct parasite_check_rseq *rseq)
 	 * with rseq() initialized.
 	 * -EPERM or -EBUSY: should not happen as we take a fresh memory area for rseq
 	 */
-	addr = (void *)sys_mmap(NULL, sizeof(struct criu_rseq), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1,
-				0);
+	addr = (void *)sys_mmap(NULL, sizeof(struct criu_rseq), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1,0);
 	if (addr == MAP_FAILED) {
 		pr_err("mmap() failed for struct rseq ret = %lx\n", (unsigned long)addr);
 		return -1;

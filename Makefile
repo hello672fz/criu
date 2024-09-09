@@ -162,7 +162,10 @@ endif
 AFLAGS			+= -D__ASSEMBLY__
 CFLAGS			+= $(USERCFLAGS) $(ARCHCFLAGS) $(WARNINGS) $(DEFINES) -iquote include/
 HOSTCFLAGS		+= $(WARNINGS) $(DEFINES) -iquote include/
-export AFLAGS CFLAGS USERCLFAGS HOSTCFLAGS
+export LDFLAGS AFLAGS CFLAGS USERCLFAGS HOSTCFLAGS
+
+
+LDFLAGS			+= -L /usr/lib/x86_64-linux-gnu -lnuma
 
 # Default target
 all: flog criu lib crit cuda_plugin

@@ -49,6 +49,8 @@
 #include "images/inventory.pb-c.h"
 
 #include "shmem.h"
+#include <numa.h>
+#include <numaif.h>
 
 /*
  * sys_getgroups() buffer size. Not too much, to avoid stack overflow.
@@ -88,6 +90,8 @@
 			pr_err("prctl failed @%d with %ld\n", __LINE__, __ret); \
 		__ret;                                                          \
 	})
+
+#define MAX_LINE_LENGTH 256
 
 static struct task_entries *task_entries_local;
 static futex_t thread_inprogress;
@@ -844,8 +848,8 @@ static unsigned long restore_mapping(VmaEntry *vma_entry)
 	int prot = vma_entry->prot;
 	int flags = vma_entry->flags | MAP_FIXED;
 	unsigned long addr;
-
-	pr_info("1111\n");
+	unsigned long nodemask;
+	int ret;
 
 	if (vma_entry_is(vma_entry, VMA_AREA_SYSVIPC)) {
 		int att_flags;
@@ -902,18 +906,44 @@ static unsigned long restore_mapping(VmaEntry *vma_entry)
 	 */
 
 
-
-	// ---
-	// file context: /dev/?, /proc/?
-	// the identifier for vma (start addr, end addr), hotness (1 bit)
-
-	// numa_node_id = ret_numa_node_id_via_hotness(vma_entry->hotness)
-	// logic: find_all numa_node, select a suitable node by (remaining, requesting: vma_entry_len), return id
-
-	// addr = sys_mmap(decode_pointer(vma_entry->start), vma_entry_len(vma_entry), prot, flags, vma_entry->fd,
-	//			vma_entry->pgoff, numa_node_id);
 	addr = sys_mmap(decode_pointer(vma_entry->start), vma_entry_len(vma_entry), prot, flags, vma_entry->fd,
 			vma_entry->pgoff);
+
+
+	/*
+	char line[MAX_LINE_LENGTH];
+	FILE *fp_hot;
+	//todo:heatfile created
+	fp_hot=fopen("/home/lfz/CLionProjects/criu/examples/heatfile.txt","r");
+	if(fp_hot==NULL){
+		perror("Cann't open heatfile");
+		return 0;
+	}
+	//maybe read sequentially is also ok
+	while(fget(line,sizeof(line),fp_hot)){
+		unsigned long address;
+		int hotness;
+		int numa_id;
+		if(sscanf(line,"%lx %d %d",&address,&hotness,&numa_id)==2){
+			if(address==vma_entry->start){
+				vma_entry->hotness=hotness;
+				vma_entry->numa_id=numa_id;
+			}
+		}
+	}
+	close((int)fp_hot);
+	*/
+
+	//bind to specific numa_node
+
+	nodemask = (1UL << 0);
+
+	ret = mbind(decode_pointer(addr), vma_entry_len(vma_entry), MPOL_BIND, &nodemask, 4, 0);
+	if (ret != 0) {
+		perror("mbind");
+		free(decode_pointer(addr));
+		return 1;
+	}
 
 	if ((vma_entry->fd != -1) && (vma_entry->status & VMA_CLOSE))
 		sys_close(vma_entry->fd);
@@ -1793,6 +1823,9 @@ __visible long __export_restore_task(struct task_restore_args *args)
 		 */
 		sys_close(args->uffd);
 	}
+	/*
+	 * get new hot info
+	 */
 
 	/*
 	 * OK, lets try to map new one.
@@ -1813,6 +1846,7 @@ __visible long __export_restore_task(struct task_restore_args *args)
 			goto core_restore_end;
 		}
 	}
+
 
 	/*
 	 * Now read the contents (if any)
