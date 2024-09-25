@@ -18,6 +18,8 @@
 #include <signal.h>
 #include <sys/inotify.h>
 #include <sys/socket.h>
+#include <syscall.h>
+#include <sys/mman.h>
 
 #include "linux/userfaultfd.h"
 
@@ -49,8 +51,10 @@
 #include "images/inventory.pb-c.h"
 
 #include "shmem.h"
-#include <numa.h>
-#include <numaif.h>
+
+
+//#include <numa.h>
+//#include <numaif.h>
 
 /*
  * sys_getgroups() buffer size. Not too much, to avoid stack overflow.
@@ -91,7 +95,8 @@
 		__ret;                                                          \
 	})
 
-#define MAX_LINE_LENGTH 256
+#define BUFFER_SIZE 1024
+#define START_SIZE 256
 
 static struct task_entries *task_entries_local;
 static futex_t thread_inprogress;
@@ -843,13 +848,85 @@ unsigned long arch_shmat(int shmid, void *shmaddr, int shmflg, unsigned long siz
 }
 #endif
 
-static unsigned long restore_mapping(VmaEntry *vma_entry)
-{
+//static unsigned long mbind(void *start, unsigned long len, int mode,
+//	   const unsigned long *nodemask, unsigned long maxnode,
+//	   unsigned flags) {
+//	return syscall(SYS_mbind, start, len, mode, nodemask, maxnode, flags);
+//}
+
+
+// 函数用于将字符串转换为数字
+uint64_t str_to_uint64(const char *str, char **endptr) {
+	uint64_t num = 0;
+	while (*str >= '0' && *str <= '9') {
+		num = num * 10 + (uint64_t)(*str - '0');
+		str++;
+	}
+	*endptr = (char *)str; // 设置结束指针
+	return num;
+}
+
+// 函数用于在缓冲区中查找给定的数字
+int find_target_addr(const char *buffer, uint64_t target, int *line, int *column) {
+	char *ptr = (char *)buffer;
+	int current_line = 1;
+	int current_column = 1;
+	char *endptr;
+	//char *start = ptr;
+	uint64_t num = str_to_uint64(ptr, &endptr);
+	while (*ptr != '\0') {
+		if (*ptr == '\n') {
+			current_line++;
+			current_column = 0;
+		}
+		if (num == target) {
+			*line = current_line;
+			*column = current_column;
+			return 1; // 找到数字
+		}
+
+		ptr = endptr;
+		current_column++;
+	}
+	return 0; // 未找到数字
+}
+
+
+//static void find_target(const char *filename, uint64_t target, int *numa_id) {
+//	char buffer[BUFFER_SIZE + 1];
+//	//char *pos = buffer, *endptr;
+//	ssize_t bytes_read;
+//	int fd_hot;
+//	char *pos;
+//	int line = 0, column = 0;
+//
+//	fd_hot=sys_open(filename,O_RDONLY,0);
+//	if (fd_hot == -1) { pr_info("open failed"); return; }
+//
+//	// 使用 read 系统调用读取文件内容
+//	while ((bytes_read = sys_read(fd_hot, buffer, BUFFER_SIZE - 1)) > 0) {
+//		buffer[bytes_read] = '\0'; // 确保字符串以空字符终止
+//		// 检查缓冲区中是否包含特定数字
+//		if (find_target_addr(buffer, target, &line, &column)) {
+//			pr_info("Found start_addr %lu at line %d, column %d\n", target, line, column);
+//			break; // 找到数字后退出循环
+//		}
+//	}
+//
+//	*numa_id = *(pos+START_SIZE+1);
+//
+//	sys_close(fd_hot);
+//}
+
+//criu-v2
+static unsigned long restore_mapping(VmaEntry *vma_entry) {
 	int prot = vma_entry->prot;
 	int flags = vma_entry->flags | MAP_FIXED;
 	unsigned long addr;
 	unsigned long nodemask;
 	int ret;
+	//double hotness=0;
+	int numa_id=3;
 
 	if (vma_entry_is(vma_entry, VMA_AREA_SYSVIPC)) {
 		int att_flags;
@@ -905,43 +982,39 @@ static unsigned long restore_mapping(VmaEntry *vma_entry)
 	 * contents.
 	 */
 
-
 	addr = sys_mmap(decode_pointer(vma_entry->start), vma_entry_len(vma_entry), prot, flags, vma_entry->fd,
 			vma_entry->pgoff);
+	pr_info("LFZ_vma_start_address: %lx\n",addr);
 
-
-	/*
-	char line[MAX_LINE_LENGTH];
-	FILE *fp_hot;
 	//todo:heatfile created
-	fp_hot=fopen("/home/lfz/CLionProjects/criu/examples/heatfile.txt","r");
-	if(fp_hot==NULL){
-		perror("Cann't open heatfile");
-		return 0;
-	}
+	//find_target("/home/lfz/CLionProjects/criu/examples/heatfile0.txt", vma_entry->start, &numa_id);
+	//vma_entry->hotness = hotness;
+	vma_entry->numa_id = numa_id;
+//	fp_hot=sys_open("/home/lfz/CLionProjects/criu/examples/heatfile.txt",O_RDONLY);
+//	if(fp_hot==-1){
+//		pr_info("Cann't open the heatfile !");
+//		return 0;
+//	}
 	//maybe read sequentially is also ok
-	while(fget(line,sizeof(line),fp_hot)){
-		unsigned long address;
-		int hotness;
-		int numa_id;
-		if(sscanf(line,"%lx %d %d",&address,&hotness,&numa_id)==2){
-			if(address==vma_entry->start){
-				vma_entry->hotness=hotness;
-				vma_entry->numa_id=numa_id;
-			}
-		}
-	}
-	close((int)fp_hot);
-	*/
+//	ssize_t len;
+//	while((len=read(fd_hot,buffer,sizeof(buffer)-1))>0){
+//		buffer[len]='\0';
+//		unsigned long addr_start;
+//		char *target = strchr(buffer, vma_entry->start);
+//		if(target){
+//			vma_entry->hotness=*(target+strlen(target) + 1);
+//			vma_entry->numa_id=*(target+strlen(target) + 2);
+//		}else
+//			return 0;
+//	}
 
-	//bind to specific numa_node
-
+	//bind to specific numa_node; define MPOL_BIND 1
 	nodemask = (1UL << 0);
-
-	ret = mbind(decode_pointer(addr), vma_entry_len(vma_entry), MPOL_BIND, &nodemask, 4, 0);
+	ret = sys_mbind(decode_pointer(addr), vma_entry_len(vma_entry), 1, &nodemask, 1, numa_id);
+	pr_info("numa_id: %d\n",numa_id);
 	if (ret != 0) {
-		perror("mbind");
-		free(decode_pointer(addr));
+		pr_perror("mbind failed");
+		//free(decode_pointer(addr));
 		return 1;
 	}
 
