@@ -20,6 +20,7 @@
 #include <sys/socket.h>
 #include <syscall.h>
 #include <sys/mman.h>
+#include <string.h>
 
 #include "linux/userfaultfd.h"
 
@@ -51,7 +52,6 @@
 #include "images/inventory.pb-c.h"
 
 #include "shmem.h"
-
 
 //#include <numa.h>
 //#include <numaif.h>
@@ -918,15 +918,170 @@ int find_target_addr(const char *buffer, uint64_t target, int *line, int *column
 //	sys_close(fd_hot);
 //}
 
+#define BUFFER_SIZE_J 1024 * 1024  // 设置足够的缓冲区大小来读取整个文件内容
+// 外部函数：从 JSON 文件中获取 numaid 值
+
+
+// 手动实现字符串查找函数
+const char* manual_strstr(const char* haystack, const char* needle) {
+	const char *p1, *p2;
+	if (!*needle) return haystack; // 如果 needle 为空，返回 haystack
+	for (; *haystack; haystack++) {
+		p1 = haystack;
+		p2 = needle;
+
+		// 匹配整个 needle
+		while (*p2 && *p1 == *p2) {
+			p1++;
+			p2++;
+		}
+
+		if (!*p2) return haystack; // 找到匹配
+	}
+	return NULL; // 未找到
+}
+
+long long manual_atoll(const char *str) {
+	long long result = 0;
+	int sign = 1;
+
+	// 处理可能的负号
+	if (*str == '-') {
+		sign = -1;
+		str++;
+	}
+
+	// 逐字符转换
+	while (*str >= '0' && *str <= '9') {
+		result = result * 10 + (*str - '0');
+		str++;
+	}
+
+	return result * sign; // 返回带符号的结果
+}
+
+// 手动实现从字符串中提取 float
+int extract_float(const char *str, float *value) {
+	char num_str1[32];
+	int i = 0;
+	// 查找“heat”字段
+	const char *ptr = manual_strstr(str, "\"heat\":");
+	if (!ptr) return -1; // 找不到
+
+	// 移动指针到值的开始位置
+	ptr += 8; // 跳过 "\"heat\": "
+	while (*ptr == ' ' || *ptr == '\t') ptr++; // 跳过空白
+
+	// 提取数字部分
+	while ((*ptr >= '0' && *ptr <= '9') || *ptr == '.' || *ptr == '-') {
+		num_str1[i++] = *ptr++;
+	}
+	num_str1[i] = '\0'; // Null-terminate
+
+	*value = manual_atoll(num_str1); // 将字符串转换为 float
+	return 0; // 成功
+}
+
+// 手动实现从字符串中提取 long long
+int extract_long_long(const char *str, long long *value) {
+	char num_str[32];
+	int i = 0;
+	// 查找“start”字段
+	const char *ptr = manual_strstr(str, "\"start\":");
+	if (!ptr) return -1; // 找不到
+
+	// 移动指针到值的开始位置
+	ptr += 8; // 跳过 "\"start\": "
+	while (*ptr == ' ' || *ptr == '\t') ptr++; // 跳过空白
+	// 提取数字部分
+	while ((*ptr >= '0' && *ptr <= '9') || *ptr == '-') {
+		num_str[i++] = *ptr++;
+	}
+	num_str[i] = '\0'; // Null-terminate
+
+	*value = manual_atoll(num_str); // 将字符串转换为 long long
+	return 0; // 成功
+}
+
+int get_numaid_from_json(const char *filename, const char *function_id, long long vma_start) {
+	int fd = sys_open(filename, O_RDONLY,0);
+	char buffer[BUFFER_SIZE_J];
+	char search_str[256];
+	const char *ptr;
+	ssize_t bytesRead;
+	int i;
+	const char *prefix = "\"function_id\": \"";
+	if (fd < 0) {
+		//pr_perror("Error opening file");
+		return -1; // 返回 -1 表示错误
+	}
+
+	bytesRead = sys_read(fd, buffer, sizeof(buffer) - 1);
+	if (bytesRead < 0) {
+		//pr_perror("Error reading file");
+		sys_close(fd);
+		return -1; // 返回 -1 表示错误
+	}
+	buffer[bytesRead] = '\0';  // Null-terminate the string
+
+	sys_close(fd);
+
+	// 手动构造 search_str
+	i = 0;
+
+	while (*prefix) {
+		search_str[i++] = *prefix++;
+	}
+
+	while (*function_id) {
+		search_str[i++] = *function_id++;
+	}
+
+	search_str[i++] = '\"'; // 添加结尾的双引号
+	search_str[i++] = '\0'; // 添加字符串结束符
+
+	// 查找指定的 function_id
+	ptr = manual_strstr(buffer, search_str);
+	if (ptr) {
+		// 找到后，检查对应的 heat
+		float heat;
+		if (extract_float(ptr, &heat) == 0) {
+			// 找到 region.start
+			long long start;
+			if (extract_long_long(buffer, &start) == 0) {
+				// 检查 start 是否等于 vma_start
+				if (start == vma_start) {
+					// 检查 heat 值
+					int numaid = (heat > 10) ? 0 : 3;
+					// 手动替换 printf 为 pr_info
+					pr_info("Function ID: %s, Start: %lld, Heat: %.2f, numaid: %d\n",
+						function_id, start, heat, numaid);
+					return numaid;  // 返回 numaid 值
+				}
+			}
+		}
+	} else {
+		// 手动替换 printf 为 pr_info
+		pr_info("Function ID '%s' not found.\n", function_id);
+	}
+
+	return -1; // 返回 -1 表示未找到对应的值或不匹配
+}
+
 //criu-v2
 static unsigned long restore_mapping(VmaEntry *vma_entry) {
 	int prot = vma_entry->prot;
 	int flags = vma_entry->flags | MAP_FIXED;
 	unsigned long addr;
-	unsigned long nodemask;
-	int ret;
-	//double hotness=0;
-	int numa_id=3;
+	//unsigned long nodemask;
+	//int ret;
+	int numa_id=0;
+	//const char *filename ="/home/lfz/workplace/CXL-Snapshot/total_heat.json";
+	//const char *function_id = "helloworld";
+
+	// 查找并检查 heat 值
+	//numa_id= get_numaid_from_json(filename, function_id, vma_entry->start);
+
 
 	if (vma_entry_is(vma_entry, VMA_AREA_SYSVIPC)) {
 		int att_flags;
@@ -986,37 +1141,16 @@ static unsigned long restore_mapping(VmaEntry *vma_entry) {
 			vma_entry->pgoff);
 	pr_info("LFZ_vma_start_address: %lx\n",addr);
 
-	//todo:heatfile created
-	//find_target("/home/lfz/CLionProjects/criu/examples/heatfile0.txt", vma_entry->start, &numa_id);
-	//vma_entry->hotness = hotness;
-	vma_entry->numa_id = numa_id;
-//	fp_hot=sys_open("/home/lfz/CLionProjects/criu/examples/heatfile.txt",O_RDONLY);
-//	if(fp_hot==-1){
-//		pr_info("Cann't open the heatfile !");
-//		return 0;
-//	}
-	//maybe read sequentially is also ok
-//	ssize_t len;
-//	while((len=read(fd_hot,buffer,sizeof(buffer)-1))>0){
-//		buffer[len]='\0';
-//		unsigned long addr_start;
-//		char *target = strchr(buffer, vma_entry->start);
-//		if(target){
-//			vma_entry->hotness=*(target+strlen(target) + 1);
-//			vma_entry->numa_id=*(target+strlen(target) + 2);
-//		}else
-//			return 0;
-//	}
-
 	//bind to specific numa_node; define MPOL_BIND 1
-	nodemask = (1UL << 0);
-	ret = sys_mbind(decode_pointer(addr), vma_entry_len(vma_entry), 1, &nodemask, 1, numa_id);
+	//nodemask = 0x1;
+	//ret = sys_mbind(decode_pointer(addr), vma_entry_len(vma_entry), 1, &nodemask, 1, 0);
+	//nodemask = (1UL << 0);
+	//ret = sys_mbind(decode_pointer(addr), vma_entry_len(vma_entry), 1, &nodemask, 1, 1);
 	pr_info("numa_id: %d\n",numa_id);
-	if (ret != 0) {
-		pr_perror("mbind failed");
-		//free(decode_pointer(addr));
-		return 1;
-	}
+	//if (ret != 0) {
+	//	pr_perror("mbind failed");
+	//	return 1;
+	//}
 
 	if ((vma_entry->fd != -1) && (vma_entry->status & VMA_CLOSE))
 		sys_close(vma_entry->fd);

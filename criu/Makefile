@@ -27,6 +27,7 @@ CFLAGS			+= -iquote include
 CFLAGS			+= -iquote images
 CFLAGS			+= -iquote $(ARCH_DIR)/include
 CFLAGS			+= -iquote .
+CFLAGS          += -I/usr/include/cjson
 CFLAGS			+= $(shell $(PKG_CONFIG) --cflags libnl-3.0)
 CFLAGS			+= $(CONFIG-DEFINES)
 
