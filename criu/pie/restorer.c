@@ -1075,8 +1075,9 @@ static unsigned long restore_mapping(VmaEntry *vma_entry) {
 	unsigned long addr;
 	unsigned long nodemask;
 	int ret;
-	int numa_id=0;
-	//const char *filename ="/home/lfz/workplace/CXL-Snapshot/total_heat.json";
+//	int numa_id=0;
+	unsigned  long random_node_id;
+		//const char *filename ="/home/lfz/workplace/CXL-Snapshot/total_heat.json";
 	//const char *function_id = "helloworld";
 
 	// 查找并检查 heat 值
@@ -1148,14 +1149,29 @@ static unsigned long restore_mapping(VmaEntry *vma_entry) {
 
 //	nodemask = 0x1;
 
-	ret = sys_mbind(0, 0, 0, 0, 0, 0);
+//	ret = sys_mbind(0, 0, 0, 0, 0, 0);
+//
+//	pr_info("LFZ_vma_start_address: %lx, length = %lu\n",addr, vma_entry_len(vma_entry));
 
-	pr_info("LFZ_vma_start_address: %lx, length = %lu\n",addr, vma_entry_len(vma_entry));
 
+	random_node_id = addr >> 20;
 
-	nodemask = 0x1;
-	ret = sys_mbind(decode_pointer(addr), vma_entry_len(vma_entry), MPOL_BIND, &nodemask, 1UL<<8, 1);
-	pr_info("numa_id: %d\n",numa_id);
+	switch (random_node_id % 4) {
+	case 0:
+		nodemask = 0b0001;
+		break;
+	case 1:
+		nodemask = 0b0010;
+		break;
+	case 2:
+		nodemask = 0b0100;
+		break;
+	default:
+		nodemask = 0b1000;
+	}
+
+	pr_info("Random node id: %lu\n", random_node_id % 4);
+	ret = sys_mbind(decode_pointer(addr), vma_entry_len(vma_entry), MPOL_BIND, &nodemask, 8, 0);
 	if (ret != 0) {
 		pr_perror("mbind failed");
 	}
