@@ -54,7 +54,7 @@
 #include "shmem.h"
 
 //#include <numa.h>
-//#include <numaif.h>
+#include <numaif.h>
 
 /*
  * sys_getgroups() buffer size. Not too much, to avoid stack overflow.
@@ -1073,8 +1073,8 @@ static unsigned long restore_mapping(VmaEntry *vma_entry) {
 	int prot = vma_entry->prot;
 	int flags = vma_entry->flags | MAP_FIXED;
 	unsigned long addr;
-	//unsigned long nodemask;
-	//int ret;
+	unsigned long nodemask;
+	int ret;
 	int numa_id=0;
 	//const char *filename ="/home/lfz/workplace/CXL-Snapshot/total_heat.json";
 	//const char *function_id = "helloworld";
@@ -1139,18 +1139,26 @@ static unsigned long restore_mapping(VmaEntry *vma_entry) {
 
 	addr = sys_mmap(decode_pointer(vma_entry->start), vma_entry_len(vma_entry), prot, flags, vma_entry->fd,
 			vma_entry->pgoff);
-	pr_info("LFZ_vma_start_address: %lx\n",addr);
+
 
 	//bind to specific numa_node; define MPOL_BIND 1
-	//nodemask = 0x1;
-	//ret = sys_mbind(decode_pointer(addr), vma_entry_len(vma_entry), 1, &nodemask, 1, 0);
-	//nodemask = (1UL << 0);
-	//ret = sys_mbind(decode_pointer(addr), vma_entry_len(vma_entry), 1, &nodemask, 1, 1);
+//	if (addr % 4096 != 0)
+//		pr_err("err address: %lx\n",addr);
+
+
+//	nodemask = 0x1;
+
+	ret = sys_mbind(0, 0, 0, 0, 0, 0);
+
+	pr_info("LFZ_vma_start_address: %lx, length = %lu\n",addr, vma_entry_len(vma_entry));
+
+
+	nodemask = 0x1;
+	ret = sys_mbind(decode_pointer(addr), vma_entry_len(vma_entry), MPOL_BIND, &nodemask, 1UL<<8, 1);
 	pr_info("numa_id: %d\n",numa_id);
-	//if (ret != 0) {
-	//	pr_perror("mbind failed");
-	//	return 1;
-	//}
+	if (ret != 0) {
+		pr_perror("mbind failed");
+	}
 
 	if ((vma_entry->fd != -1) && (vma_entry->status & VMA_CLOSE))
 		sys_close(vma_entry->fd);
