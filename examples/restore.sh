@@ -1,3 +1,3 @@
 #!/bin/bash
 
-sudo ../criu/criu restore -D /tmp/checkpoint -j -v4
+sudo ../criu/criu restore -D /tmp/checkpoint-loop -j -v4

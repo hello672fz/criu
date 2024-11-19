@@ -22,6 +22,7 @@ pr = os.fdopen(p[0], "r")
 pw = os.fdopen(p[1], "w")
 
 pid = os.fork()
+#`pidof `
 if pid == 0:
     m.close()
     os.setsid()
@@ -34,12 +35,15 @@ if pid == 0:
     while True:
         if not os.access("running", os.F_OK):
             sys.exit(0)
-        time.sleep(1)
+        for i in range(100):
+            print(i)
+            time.sleep(1)
     sys.exit(1)
 
 pw.close()
 pr.read(1)
 
+time.sleep(2)
 cmd = [cr_bin, "dump", "-j", "-t", str(pid), "-D", "work", "-v"]
 print("Run: %s" % " ".join(cmd))
 ret = subprocess.Popen(cmd).wait()

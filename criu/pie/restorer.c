@@ -848,12 +848,6 @@ unsigned long arch_shmat(int shmid, void *shmaddr, int shmflg, unsigned long siz
 }
 #endif
 
-//static unsigned long mbind(void *start, unsigned long len, int mode,
-//	   const unsigned long *nodemask, unsigned long maxnode,
-//	   unsigned flags) {
-//	return syscall(SYS_mbind, start, len, mode, nodemask, maxnode, flags);
-//}
-
 
 // 函数用于将字符串转换为数字
 uint64_t str_to_uint64(const char *str, char **endptr) {
@@ -1140,6 +1134,7 @@ static unsigned long restore_mapping(VmaEntry *vma_entry) {
 
 	addr = sys_mmap(decode_pointer(vma_entry->start), vma_entry_len(vma_entry), prot, flags, vma_entry->fd,
 			vma_entry->pgoff);
+	pr_info("vma_entry->start:%lu\n",vma_entry->start);
 
 
 	//bind to specific numa_node; define MPOL_BIND 1
@@ -1147,10 +1142,7 @@ static unsigned long restore_mapping(VmaEntry *vma_entry) {
 //		pr_err("err address: %lx\n",addr);
 
 
-//	nodemask = 0x1;
-
-//	ret = sys_mbind(0, 0, 0, 0, 0, 0);
-//
+	ret = sys_mbind(0, 0, 0, 0, 0, 0);
 //	pr_info("LFZ_vma_start_address: %lx, length = %lu\n",addr, vma_entry_len(vma_entry));
 
 
@@ -1168,14 +1160,17 @@ static unsigned long restore_mapping(VmaEntry *vma_entry) {
 		break;
 	default:
 		nodemask = 0b1000;
+	
 	}
 
 	pr_info("Random node id: %lu\n", random_node_id % 4);
+	// nodemask = 0b0001;
 	ret = sys_mbind(decode_pointer(addr), vma_entry_len(vma_entry), MPOL_BIND, &nodemask, 8, 0);
 	if (ret != 0) {
 		pr_perror("mbind failed");
 	}
 
+	pr_info("Random node id: hellocriuLFZ!!!!!!!!!!!\n");
 	if ((vma_entry->fd != -1) && (vma_entry->status & VMA_CLOSE))
 		sys_close(vma_entry->fd);
 
